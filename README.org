@@ -1,0 +1,43 @@
+#+TITLE: llvm-passes
+#+AUTHOR: Sholde
+#+DATE: December 2021
+
+* Usage
+
+  For now, the passes are written to be passed to the ~opt~ command which is
+  given by llvm. You must therefore build llvm by putting the different passes
+  that are in the ~src~ directory in the ~lib/Transform/~ directory of llvm.
+
+  NOTE: don't forget to add these directories to the ~CMakeLists.txt~ directory
+  of ~lib/Transform/~.
+
+** Example to build LLVM
+*** Compilation
+
+    #+BEGIN_SRC bash
+      $ cmake --build . -j 4
+    #+END_SRC
+
+*** Installation
+
+    #+BEGIN_SRC bash
+      $ sudo cmake --build . -j 4 --target install
+    #+END_SRC
+
+** Execution of passes
+*** Compile your source code
+
+    Don't forget to compile with ~-O0~ to avoid deleting useless instructions
+    during optimization passes.
+
+    #+BEGIN_SRC bash
+      $ clang -O0 -emit-llvm double.c -c -o double.bc
+    #+END_SRC
+
+*** Launch of the pass with opt
+
+    here we use the ~-enable-new-pm=0~ option to use the old pass manager.
+
+    #+BEGIN_SRC bash
+      $ opt -enable-new-pm=0 -load ~/path/to/llvm/build/lib/LLVMFastFP.so -fast-fp < double.bc > /dev/null
+    #+END_SRC
