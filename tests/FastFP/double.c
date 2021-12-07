@@ -2,11 +2,11 @@
 
 int main(int argc, char **argv)
 {
-  double a = 4.8;
-  double b = 0.988;
+  double a = 4.97e-21;
+  double b = 3.8e-34;
   double c = a * b;
 
-  printf("%lf\n", c);
+  printf("%e\n", c);
 
   return 0;
 }
