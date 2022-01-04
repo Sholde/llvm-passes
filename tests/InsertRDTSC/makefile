@@ -3,7 +3,7 @@ all: main simple simple_rdtsc
 main: main.c
 	clang -emit-llvm main.c -c -o main.bc
 	opt -enable-new-pm=0 -load /home/sholde/dev/software/llvm-project/llvm/build/lib/LLVMInsertRDTSC.so --insert-rdtsc < main.bc > main_after.bc
-	clang after.bc -o main
+	clang main_after.bc -o main
 
 simple: simple.c
 	clang -emit-llvm simple.c -c -o simple.bc
