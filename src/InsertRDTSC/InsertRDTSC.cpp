@@ -88,29 +88,60 @@ namespace {
           continue;
 
         // Get an IR builder. Sets the insertion point to the top of the function
-        IRBuilder<> Builder(&*F.getEntryBlock().getFirstInsertionPt());
+        IRBuilder<> BuilderBeg(&*F.getEntryBlock().getFirstInsertionPt());
 
         // Inject a global variable that contains the function name
-        auto FuncName = Builder.CreateGlobalStringPtr(F.getName());
+        auto FuncName = BuilderBeg.CreateGlobalStringPtr(F.getName());
 
         // Printf requires i8*, but PrintfFormatStrVar is an array: [n x i8]. Add
         // a cast: [n x i8] -> i8*
         llvm::Value *FormatStrPtr =
-          Builder.CreatePointerCast(PrintfFormatStrVar, PrintfArgTy, "formatStr");
+          BuilderBeg.CreatePointerCast(PrintfFormatStrVar, PrintfArgTy, "formatStr");
 
         // The following is visible only if you pass -debug on the command line
         // *and* you have an assert build.
         LLVM_DEBUG(dbgs() << " Injecting call to printf inside " << F.getName()
                    << "\n");
 
-        // Call rdtsc
+        // rdtsc value
+        llvm::Value *beg = NULL;
+        llvm::Value *end = NULL;
+
+        // Begin
         if (F.getName() != RDTSCF->getName())
           {
-            llvm::Value *ret = Builder.CreateCall(RDTSC);
+            // Call rdtsc
+            beg = BuilderBeg.CreateCall(RDTSC);
+          }
 
-            // Finally, inject a call to printf
-            Builder.CreateCall(Printf,
-                               {FormatStrPtr, FuncName, ret});
+        // End
+        for (auto &BB: F)
+          {
+            for (auto &II: BB)
+              {
+                Instruction *I = &II;
+                if (ReturnInst *RI = dyn_cast<ReturnInst>(I))
+                  {
+                    if (F.getName() != RDTSCF->getName())
+                      {
+                        // Get an IR builder. Sets the insertion point to the top of the function
+                        IRBuilder<> BuilderEnd(RI);
+
+                        // Call rdtsc
+                        end = BuilderEnd.CreateCall(RDTSC);
+
+                        // Call sub
+                        BinaryOperator *op =
+                          BinaryOperator::CreateSub(end, beg, "end-beg", RI);
+
+                        llvm::Value *ret = llvm::cast<Value>(op);
+
+                        // Finally, inject a call to printf
+                        BuilderEnd.CreateCall(Printf,
+                                              {FormatStrPtr, FuncName, ret});
+                      }
+                  }
+              }
           }
 
         this->count_insertion++;
