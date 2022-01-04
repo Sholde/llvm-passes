@@ -60,15 +60,15 @@ namespace {
       PrintfF->addParamAttr(0, Attribute::ReadOnly);
 
       FunctionType *RDTSCTy = FunctionType::get(IntegerType::getInt64Ty(CTX),
-                                                /*IsVarArgs=*/true);
+                                                /*IsVarArgs=*/false);
 
       FunctionCallee RDTSC = M.getOrInsertFunction("rdtsc", RDTSCTy);
 
       // Set attributes as per inferLibFuncAttributes in BuildLibCalls.cpp
       Function *RDTSCF = dyn_cast<Function>(RDTSC.getCallee());
-      //RDTSCF->setDoesNotThrow();
-      //RDTSCF->addParamAttr(0, Attribute::NoCapture);
-      //RDTSCF->addParamAttr(0, Attribute::ReadOnly);
+      RDTSCF->setDoesNotThrow();
+//      RDTSCF->addParamAttr(0, Attribute::NoCapture);
+//      RDTSCF->addParamAttr(0, Attribute::ReadOnly);
 
       // STEP 2: Inject a global variable that will hold the printf format string
       // ------------------------------------------------------------------------
@@ -103,11 +103,15 @@ namespace {
         LLVM_DEBUG(dbgs() << " Injecting call to printf inside " << F.getName()
                    << "\n");
 
-        llvm::Value *ret = Builder.CreateCall(RDTSC);
+        // Call rdtsc
+        if (F.getName() != RDTSCF->getName())
+          {
+            llvm::Value *ret = Builder.CreateCall(RDTSC);
 
-        // Finally, inject a call to printf
-        Builder.CreateCall(Printf,
-                           {FormatStrPtr, FuncName, Builder.getInt64(4)});
+            // Finally, inject a call to printf
+            Builder.CreateCall(Printf,
+                               {FormatStrPtr, FuncName, ret});
+          }
 
         this->count_insertion++;
       }
