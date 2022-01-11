@@ -67,19 +67,60 @@ namespace {
       // Set attributes as per inferLibFuncAttributes in BuildLibCalls.cpp
       Function *RDTSCF = dyn_cast<Function>(RDTSC.getCallee());
       RDTSCF->setDoesNotThrow();
-//      RDTSCF->addParamAttr(0, Attribute::NoCapture);
-//      RDTSCF->addParamAttr(0, Attribute::ReadOnly);
 
       // STEP 2: Inject a global variable that will hold the printf format string
       // ------------------------------------------------------------------------
       llvm::Constant *PrintfFormatStr =
         llvm::ConstantDataArray::getString(CTX,
-                                           "==insert-rdtsc== Hello from: %s\n"
-                                           "==insert-rdtsc==   cycles: %ld\n");
+                                           "==insert-rdtsc== %20s  %16ld cycles\n");
 
       Constant *PrintfFormatStrVar =
         M.getOrInsertGlobal("PrintfFormatStr", PrintfFormatStr->getType());
       dyn_cast<GlobalVariable>(PrintfFormatStrVar)->setInitializer(PrintfFormatStr);
+
+      // main print
+      llvm::Constant *MainPrintfFormatStr =
+        llvm::ConstantDataArray::getString(CTX,
+          "============================== Insert RDTSC passe ==============================\n"
+          "==insert-rdtsc==\n"
+          "==insert-rdtsc==        function name         number of cycles\n"
+          "==insert-rdtsc==\n");
+
+      Constant *MainPrintfFormatStrVar =
+        M.getOrInsertGlobal("MainPrintfFormatStr", MainPrintfFormatStr->getType());
+      dyn_cast<GlobalVariable>(MainPrintfFormatStrVar)->setInitializer(MainPrintfFormatStr);
+
+      // Handle global variable of each function
+      std::map<llvm::StringRef, llvm::Value *> map_str_value;
+
+      for (auto &F : M) {
+        if (F.isDeclaration())
+          continue;
+
+        auto func_str = F.getName();
+
+        // Global Variable Declarations
+        GlobalVariable* gvar_count = new GlobalVariable(
+          /*Module=*/M,
+          /*Type=*/IntegerType::getInt64Ty(CTX),
+          /*isConstant=*/false,
+          /*Linkage=*/GlobalValue::CommonLinkage,
+          /*Initializer=*/0, // has initializer, specified below
+          /*Name=*/"count");
+
+        // Constant Definitions
+        llvm::Constant *zero =
+          llvm::ConstantInt::get(IntegerType::getInt64Ty(CTX),
+                                 0/*value*/,
+                                 true);
+
+        // Global Variable Definitions
+        gvar_count->setInitializer(zero);
+
+        // Update map
+        map_str_value.insert(
+          std::pair<llvm::StringRef, llvm::Value *>(func_str, gvar_count));
+      }
 
       // STEP 3: For each function in the module, inject a call to printf
       // ----------------------------------------------------------------
@@ -122,23 +163,84 @@ namespace {
                 Instruction *I = &II;
                 if (ReturnInst *RI = dyn_cast<ReturnInst>(I))
                   {
-                    if (F.getName() != RDTSCF->getName())
-                      {
-                        // Get an IR builder. Sets the insertion point to the top of the function
-                        IRBuilder<> BuilderEnd(RI);
+                    auto func_str = F.getName();
 
+                    // Get an IR builder. Sets the insertion point to the top of the function
+                    IRBuilder<> BuilderEnd(RI);
+
+                    if (func_str != RDTSCF->getName())
+                      {
                         // Call rdtsc
                         end = BuilderEnd.CreateCall(RDTSC);
 
                         // Call sub
-                        BinaryOperator *op =
+                        BinaryOperator *op_sub =
                           BinaryOperator::CreateSub(end, beg, "end-beg", RI);
 
-                        llvm::Value *ret = llvm::cast<Value>(op);
+                        //llvm::Value *ret = llvm::cast<Value>(op_sub);
+
+                        // Load global variable
+                        LoadInst *gvar =
+                          new LoadInst(IntegerType::getInt64Ty(CTX),
+                                       map_str_value[func_str],
+                                       "load_gvar",
+                                       RI);
+
+                        // Adding elpased to the global variable
+                        BinaryOperator *op_add =
+                          BinaryOperator::CreateAdd(op_sub,
+                                                    gvar,
+                                                    "update-gvar",
+                                                    RI);
+
+                        // Store global variable
+                        StoreInst *store =
+                          new StoreInst(op_add,
+                                        map_str_value[func_str],
+                                        RI);
 
                         // Finally, inject a call to printf
-                        BuilderEnd.CreateCall(Printf,
-                                              {FormatStrPtr, FuncName, ret});
+                        //BuilderEnd.CreateCall(Printf,
+                        //                      {FormatStrPtr, FuncName, ret});
+                      }
+
+                    if (func_str == "main")
+                      {
+                        //
+                        llvm::Value *MainFormatStrPtr =
+                          BuilderBeg.CreatePointerCast(MainPrintfFormatStrVar,
+                                                       PrintfArgTy,
+                                                       "formatStr");
+
+                        // Main message
+                        BuilderEnd.CreateCall(Printf, {MainFormatStrPtr});
+
+                        // Printing
+                        for (auto &p: map_str_value)
+                          {
+                            // Get name of the function
+                            auto func_str = p.first;
+
+                            if (func_str != "rdtsc")
+                              {
+                                // Inject a global variable that contains the
+                                // function name
+                                auto FuncName =
+                                  BuilderBeg.CreateGlobalStringPtr(func_str);
+
+                                // Load global variable
+                                LoadInst *gvar =
+                                  new LoadInst(IntegerType::getInt64Ty(CTX),
+                                               p.second,
+                                               "load_gvar",
+                                               RI);
+
+                                // Finally, inject a call to printf
+                                BuilderEnd.CreateCall(Printf,
+                                                      {FormatStrPtr, FuncName,
+                                                      gvar});
+                              }
+                          }
                       }
                   }
               }
