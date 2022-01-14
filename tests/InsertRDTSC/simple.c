@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdint.h>
+#include <stdatomic.h>
 
 uint64_t rdtsc(){
     unsigned int lo, hi;

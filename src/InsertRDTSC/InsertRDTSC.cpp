@@ -59,6 +59,7 @@ namespace {
       PrintfF->addParamAttr(0, Attribute::NoCapture);
       PrintfF->addParamAttr(0, Attribute::ReadOnly);
 
+      // Get RDTSC
       FunctionType *RDTSCTy = FunctionType::get(IntegerType::getInt64Ty(CTX),
                                                 /*IsVarArgs=*/false);
 
@@ -68,22 +69,28 @@ namespace {
       Function *RDTSCF = dyn_cast<Function>(RDTSC.getCallee());
       RDTSCF->setDoesNotThrow();
 
-      // STEP 2: Inject a global variable that will hold the printf format string
-      // ------------------------------------------------------------------------
+      // STEP 2: Inject global variables
+      // -------------------------------
+
+      // STEP 2.1: Inject a global variable that will hold the printf format
+      // string for the count of cycle of each function
+      // -------------------------------------------------------------------
       llvm::Constant *PrintfFormatStr =
         llvm::ConstantDataArray::getString(CTX,
-                                           "==insert-rdtsc== %20s  %16ld cycles\n");
+                                           "==insert-rdtsc== %32s  %16ld cycles\n");
 
       Constant *PrintfFormatStrVar =
         M.getOrInsertGlobal("PrintfFormatStr", PrintfFormatStr->getType());
       dyn_cast<GlobalVariable>(PrintfFormatStrVar)->setInitializer(PrintfFormatStr);
 
-      // main print
+      // STEP 2.2: Inject a global variable that will hold the printf format
+      // string that show information about passe
+      // -------------------------------------------------------------------
       llvm::Constant *MainPrintfFormatStr =
         llvm::ConstantDataArray::getString(CTX,
           "============================== Insert RDTSC passe ==============================\n"
           "==insert-rdtsc==\n"
-          "==insert-rdtsc==        function name         number of cycles\n"
+          "==insert-rdtsc==                    function name         number of cycles\n"
           "==insert-rdtsc==\n");
 
       Constant *MainPrintfFormatStrVar =
@@ -93,6 +100,14 @@ namespace {
       // Handle global variable of each function
       std::map<llvm::StringRef, llvm::Value *> map_str_value;
 
+      // Constant Definitions
+      llvm::Constant *zero =
+        llvm::ConstantInt::get(IntegerType::getInt64Ty(CTX),
+                               0/*value*/,
+                               true);
+
+      // STEP 3: Inject global variables that will hold each function counter
+      // --------------------------------------------------------------------
       for (auto &F : M) {
         if (F.isDeclaration())
           continue;
@@ -108,12 +123,6 @@ namespace {
           /*Initializer=*/0, // has initializer, specified below
           /*Name=*/"count");
 
-        // Constant Definitions
-        llvm::Constant *zero =
-          llvm::ConstantInt::get(IntegerType::getInt64Ty(CTX),
-                                 0/*value*/,
-                                 true);
-
         // Global Variable Definitions
         gvar_count->setInitializer(zero);
 
@@ -122,8 +131,11 @@ namespace {
           std::pair<llvm::StringRef, llvm::Value *>(func_str, gvar_count));
       }
 
-      // STEP 3: For each function in the module, inject a call to printf
-      // ----------------------------------------------------------------
+      // STEP 4: For each function in the module, start by call rdtsc function,
+      // and at its end call a second time to get elapsed time and update the
+      // gloabal variable with atomic operation (fetch and add - to provide
+      // thread safety)
+      // ----------------------------------------------------------------------
       for (auto &F : M) {
         if (F.isDeclaration())
           continue;
@@ -132,7 +144,7 @@ namespace {
         IRBuilder<> BuilderBeg(&*F.getEntryBlock().getFirstInsertionPt());
 
         // Inject a global variable that contains the function name
-        auto FuncName = BuilderBeg.CreateGlobalStringPtr(F.getName());
+        //auto FuncName = BuilderBeg.CreateGlobalStringPtr(F.getName());
 
         // Printf requires i8*, but PrintfFormatStrVar is an array: [n x i8]. Add
         // a cast: [n x i8] -> i8*
@@ -144,18 +156,21 @@ namespace {
         LLVM_DEBUG(dbgs() << " Injecting call to printf inside " << F.getName()
                    << "\n");
 
-        // rdtsc value
+        // Store rdtsc value
         llvm::Value *beg = NULL;
         llvm::Value *end = NULL;
 
-        // Begin
+        // Adding at the begin of the function
         if (F.getName() != RDTSCF->getName())
           {
-            // Call rdtsc
+            // Call rdtsc to get the clock start
             beg = BuilderBeg.CreateCall(RDTSC);
           }
 
-        // End
+        // Get the name of the current function
+        auto func_str = F.getName();
+
+        // Adding at the end of the function
         for (auto &BB: F)
           {
             for (auto &II: BB)
@@ -163,47 +178,32 @@ namespace {
                 Instruction *I = &II;
                 if (ReturnInst *RI = dyn_cast<ReturnInst>(I))
                   {
-                    auto func_str = F.getName();
-
                     // Get an IR builder. Sets the insertion point to the top of the function
                     IRBuilder<> BuilderEnd(RI);
 
                     if (func_str != RDTSCF->getName())
                       {
-                        // Call rdtsc
+                        // Call rdtsc to get the clock stop
                         end = BuilderEnd.CreateCall(RDTSC);
 
-                        // Call sub
+                        // Call sub to get elpased time
                         BinaryOperator *op_sub =
                           BinaryOperator::CreateSub(end, beg, "end-beg", RI);
 
-                        //llvm::Value *ret = llvm::cast<Value>(op_sub);
-
-                        // Load global variable
-                        LoadInst *gvar =
-                          new LoadInst(IntegerType::getInt64Ty(CTX),
-                                       map_str_value[func_str],
-                                       "load_gvar",
-                                       RI);
-
-                        // Adding elpased to the global variable
-                        BinaryOperator *op_add =
-                          BinaryOperator::CreateAdd(op_sub,
-                                                    gvar,
-                                                    "update-gvar",
-                                                    RI);
-
-                        // Store global variable
-                        StoreInst *store =
-                          new StoreInst(op_add,
-                                        map_str_value[func_str],
-                                        RI);
-
-                        // Finally, inject a call to printf
-                        //BuilderEnd.CreateCall(Printf,
-                        //                      {FormatStrPtr, FuncName, ret});
+                        // Atomic fetch and add
+                        AtomicRMWInst *armwi =
+                          new AtomicRMWInst(
+                             /* BinOp */ llvm::AtomicRMWInst::Add,
+                             /* ptr */ map_str_value[func_str],
+                             /* val */ op_sub,
+                             /* alignement */ Align(),
+                             /* ordereing */ llvm::AtomicOrdering::SequentiallyConsistent,
+                             /* SyncScope */ SyncScope::System,
+                             /* insert before */ RI);
                       }
 
+                    // STEP 5: Print the counter of each function
+                    // ------------------------------------------
                     if (func_str == "main")
                       {
                         //
@@ -237,8 +237,9 @@ namespace {
 
                                 // Finally, inject a call to printf
                                 BuilderEnd.CreateCall(Printf,
-                                                      {FormatStrPtr, FuncName,
-                                                      gvar});
+                                                      {FormatStrPtr,
+                                                       FuncName,
+                                                       gvar});
                               }
                           }
                       }
@@ -249,14 +250,17 @@ namespace {
         this->count_insertion++;
       }
 
+      // If we modify the IR, then we need to specify with TRUE
       if (this->count_insertion != 0)
         return true;
 
+      //
       return false;
     }
   };
 }
 
+//
 char InsertRDTSC::ID = 0;
 static RegisterPass<InsertRDTSC> X("insert-rdtsc", "Insert RDTSC Pass");
 static RegisterStandardPasses Y(PassManagerBuilder::EP_EarlyAsPossible,
