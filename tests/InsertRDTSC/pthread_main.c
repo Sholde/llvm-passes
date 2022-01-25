@@ -1,6 +1,11 @@
+#include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <stdatomic.h>
+#include <pthread.h>
+
+#define _GNU_SOURCE
+#include <unistd.h>
 
 #define ALIGN 64
 #define N_THREAD 10
@@ -14,6 +19,7 @@ uint64_t rdtsc(){
 void *thread_func(void *arg)
 {
   printf("tid: %d\n", gettid());
+  return NULL;
 }
 
 int main(int argc, char **argv)
