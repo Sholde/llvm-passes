@@ -1,3 +1,4 @@
+#include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <omp.h>
@@ -13,6 +14,20 @@ uint64_t rdtsc(){
     return ((uint64_t)hi << 32) | lo;
 }
 
+double omp_reduc(double *restrict a, uint64_t n)
+{
+  double res = 0.0;
+
+#pragma omp parallel shared(res)
+  {
+#pragma omp for reduction(+:res)
+    for (uint64_t i = 0; i < n; i++)
+      res += a[i];
+  }
+
+  return res;
+}
+
 int main(int argc, char **argv)
 {
   double *restrict a = aligned_alloc(ALIGN, sizeof(double) * N);
@@ -22,14 +37,7 @@ int main(int argc, char **argv)
       a[i] = i;
     }
 
-  double res = 0.0;
-
-#pragma omp parallel shared(res)
-  {
-#pragma omp for reduction(+:res)
-    for (uint64_t i = 0; i < N; i++)
-      res += a[i];
-  }
+  double res = omp_reduc(a, N);
 
   free(a);
 
