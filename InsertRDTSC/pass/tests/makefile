@@ -1,5 +1,5 @@
 PASS_PATH=/home/sholde/dev/software/llvm-project/llvm/build/lib/LLVMInsertRDTSC.so
-LIB_PATH=/home/sholde/dev/master/llvm-passes/src/InsertRDTSC/runtime/src
+LIB_PATH=/home/sholde/dev/master/llvm-passes/InsertRDTSC/runtime/src
 
 CC=clang
 LFLAGS=-Wl,-rpath=$(LIB_PATH) -L$(LIB_PATH) -linsertrdtsc $(LIB_PATH)/libinsertrdtsc.so
