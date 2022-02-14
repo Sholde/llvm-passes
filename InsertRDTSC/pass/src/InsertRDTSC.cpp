@@ -328,7 +328,7 @@ namespace {
                                     /* alignement= */ Align(),
                                     /* ordereing= */ llvm::AtomicOrdering::SequentiallyConsistent,
                                     /* SyncScope= */ SyncScope::System,
-                                    /* insert before= */ &*F.getEntryBlock().getFirstInsertionPt());
+                                    /* insert before= */ RI);
 
                 // Get string pointer to functin name
                 auto FuncName = BuilderBeg.CreateGlobalStringPtr(func_str);
