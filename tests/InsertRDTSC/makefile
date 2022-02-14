@@ -1,4 +1,4 @@
-all: main simple simple_rdtsc omp_main pthread_main
+all: main simple simple_rdtsc omp_main pthread_main link
 
 main: main.c
 	clang -emit-llvm main.c -c -o main.bc
@@ -23,5 +23,10 @@ pthread_main: pthread_main.c
 	opt -enable-new-pm=0 -load /home/sholde/dev/software/llvm-project/llvm/build/lib/LLVMInsertRDTSC.so --insert-rdtsc < pthread_main.bc > pthread_main_after.bc
 	clang pthread_main_after.bc -o pthread_main -latomic -pthread
 
+link: link.c
+	clang -emit-llvm link.c -c -o link.bc
+	opt -enable-new-pm=0 -load /home/sholde/dev/software/llvm-project/llvm/build/lib/LLVMInsertRDTSC.so --insert-rdtsc < link.bc > link_after.bc
+	clang -O2 link_after.bc -o link -latomic -llazyprobe ./liblazyprobe.so -L/home/sholde/dev/master/llvm-passes/tests/InsertRDTSC -Wl,-rpath=/home/sholde/dev/master/llvm-passes/tests/InsertRDTSC
+
 clean:
-	rm -Rf *~ *.bc *.o *.ll main simple simple_rdtsc omp_main pthread_main
+	rm -Rf *~ *.bc *.o *.ll main simple simple_rdtsc omp_main pthread_main link
