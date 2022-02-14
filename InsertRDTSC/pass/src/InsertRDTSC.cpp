@@ -249,7 +249,7 @@ namespace {
         auto func_str = F.getName();
 
         // -----------------------
-        // Step 6: Insert at begin
+        // Step 5: Insert at begin
         // -----------------------
 
         // Get an IR builder
