@@ -296,6 +296,7 @@ void rdtscp(uint64_t *cycles, uint64_t *proc_id)
   asm __volatile__
     (
      // Assembler
+     "mfence;\n"
      "rdtscp;\n"
      "shl $32, %%rdx;\n"
      "or %%rdx, %%rax;\n"
