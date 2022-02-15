@@ -146,7 +146,7 @@ void analyze_function(uint64_t n)
     }
 
   // Update core switch ratio
-  __mod.core_switch_ratio = (double)count_csr / (double)n;
+  __mod.core_switch_ratio = ((double)count_csr / (double)n) * 100;
 }
 
 void write_function_info(uint64_t n)
@@ -267,7 +267,7 @@ void write_module_summary(void)
           "%28s: %ld\n"
           "%28s: %ld\n"
           "%28s: %ld\n"
-          "%28s: %3.2lf%c\n",
+          "%28s: %.2lf %c\n",
           "number of cores", __mod.nprocs,
           "number of cores available", __mod.nprocs_avail,
           "number of threads appears", __mod.nthreads,
