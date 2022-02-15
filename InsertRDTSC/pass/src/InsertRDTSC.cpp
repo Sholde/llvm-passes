@@ -71,7 +71,7 @@ namespace {
       FunctionType *rdtscpTy =
         FunctionType::get(/*ReturnType=*/VoidTy,
                           /*ArgType=*/{PointerInt64Ty, PointerInt64Ty},
-                          /*IsVarArgs=*/true);
+                          /*IsVarArgs=*/false);
 
       FunctionCallee rdtscp = M.getOrInsertFunction("rdtscp", rdtscpTy);
 
